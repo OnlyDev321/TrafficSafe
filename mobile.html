@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>모바일 카메라</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      #localVideo {
+        width: 100%;
+        max-width: 100vw;
+        height: auto;
+        display: none;
+      }
+      #startButton {
+        padding: 10px 20px;
+        margin: 20px;
+        font-size: 16px;
+      }
+      #status {
+        color: red;
+        margin: 10px;
+      }
+      .debug-info {
+        font-size: 12px;
+        color: #666;
+        margin: 10px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status"></div>
+    <button id="startButton">카메라 시작</button>
+    <video id="localVideo" autoplay playsinline></video>
+    <div id="debugInfo" class="debug-info"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const debugInfo = document.getElementById("debugInfo");
+      const status = document.getElementById("status");
+      let peerConnection = null;
+      let localStream = null;
+
+      function showDebugInfo(info) {
+        const timestamp = new Date().toLocaleTimeString();
+        debugInfo.textContent += `[${timestamp}] ${info}\n`;
+        console.log(`[${timestamp}] ${info}`);
+      }
+
+      // 초기 상태 표시
+      status.textContent = "카메라 권한을 확인중입니다...";
+      showDebugInfo("앱 초기화 시작");
+      showDebugInfo("브라우저 정보: " + navigator.userAgent);
+
+      // WebRTC 연결 설정
+      function setupWebRTC(stream) {
+        const configuration = {
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+        };
+
+        peerConnection = new RTCPeerConnection(configuration);
+        localStream = stream;
+
+        // 스트림 추가
+        stream.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, stream);
+          showDebugInfo(`트랙 추가됨: ${track.kind}`);
+        });
+
+        // ICE 후보 처리
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            showDebugInfo("ICE 후보 발견");
+            socket.emit("ice-candidate", event.candidate);
+          }
+        };
+
+        // 연결 상태 모니터링
+        peerConnection.onconnectionstatechange = () => {
+          showDebugInfo(`연결 상태 변경: ${peerConnection.connectionState}`);
+        };
+
+        // Offer 생성 및 전송
+        createAndSendOffer();
+      }
+
+      // Offer 생성
+      async function createAndSendOffer() {
+        try {
+          const offer = await peerConnection.createOffer({
+            offerToReceiveVideo: true,
+            offerToReceiveAudio: false,
+          });
+
+          await peerConnection.setLocalDescription(offer);
+          showDebugInfo("Offer 생성 완료");
+
+          socket.emit("offer", offer);
+          showDebugInfo("Offer 전송됨");
+        } catch (err) {
+          showDebugInfo("Offer 생성 오류: " + err.message);
+        }
+      }
+
+      // Socket.IO 연결
+      const socket = io();
+
+      socket.on("connect", () => {
+        showDebugInfo("서버에 연결됨");
+      });
+
+      socket.on("answer", async (answer) => {
+        try {
+          showDebugInfo("Answer 수신됨");
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(answer)
+          );
+          showDebugInfo("Remote Description 설정됨");
+        } catch (err) {
+          showDebugInfo("Answer 처리 오류: " + err.message);
+        }
+      });
+
+      socket.on("ice-candidate", async (candidate) => {
+        try {
+          if (candidate && peerConnection) {
+            await peerConnection.addIceCandidate(
+              new RTCIceCandidate(candidate)
+            );
+            showDebugInfo("ICE 후보 추가됨");
+          }
+        } catch (err) {
+          showDebugInfo("ICE 후보 처리 오류: " + err.message);
+        }
+      });
+
+      // 권한 상태 확인
+      async function checkPermissions() {
+        try {
+          const result = await navigator.permissions.query({ name: "camera" });
+          showDebugInfo("카메라 권한 상태: " + result.state);
+          return result.state;
+        } catch (err) {
+          showDebugInfo("권한 확인 오류: " + err.message);
+          return "unknown";
+        }
+      }
+
+      // 카메라 디바이스 확인
+      async function checkCameraDevices() {
+        try {
+          showDebugInfo("카메라 장치 확인 중...");
+
+          if (
+            !navigator.mediaDevices ||
+            !navigator.mediaDevices.enumerateDevices
+          ) {
+            showDebugInfo("mediaDevices API 지원되지 않음");
+            return false;
+          }
+
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const cameras = devices.filter(
+            (device) => device.kind === "videoinput"
+          );
+
+          showDebugInfo(`발견된 카메라 수: ${cameras.length}`);
+          cameras.forEach((camera, index) => {
+            showDebugInfo(
+              `카메라 ${index + 1}: ${camera.label || "이름 없음"}`
+            );
+          });
+
+          return cameras.length > 0;
+        } catch (err) {
+          showDebugInfo("카메라 장치 확인 오류: " + err.message);
+          return false;
+        }
+      }
+
+      // 카메라 시작
+      async function startCamera() {
+        const video = document.getElementById("localVideo");
+
+        try {
+          showDebugInfo("카메라 시작 시도...");
+
+          const permissionState = await checkPermissions();
+          showDebugInfo("현재 권한 상태: " + permissionState);
+
+          const hasCamera = await checkCameraDevices();
+          if (!hasCamera) {
+            throw new Error("사용 가능한 카메라를 찾을 수 없습니다");
+          }
+
+          const constraints = {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          };
+
+          showDebugInfo("카메라 접근 시도");
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+          showDebugInfo("카메라 스트림 획득 성공");
+          video.srcObject = stream;
+          video.style.display = "block";
+
+          video.onloadedmetadata = () => {
+            showDebugInfo("비디오 메타데이터 로드됨");
+            video
+              .play()
+              .then(() => showDebugInfo("비디오 재생 시작"))
+              .catch((err) =>
+                showDebugInfo("비디오 재생 실패: " + err.message)
+              );
+          };
+
+          status.textContent = "카메라가 작동중입니다.";
+          status.style.color = "green";
+
+          // WebRTC 설정 시작
+          setupWebRTC(stream);
+
+          return stream;
+        } catch (err) {
+          const errorMessage = "카메라 시작 실패: " + err.message;
+          status.textContent = errorMessage;
+          showDebugInfo(errorMessage);
+          throw err;
+        }
+      }
+
+      // 시작 버튼 이벤트
+      document
+        .getElementById("startButton")
+        .addEventListener("click", async () => {
+          try {
+            await startCamera();
+          } catch (err) {
+            showDebugInfo("전체 프로세스 실패: " + err.message);
+          }
+        });
+    </script>
+  </body>
+</html>
