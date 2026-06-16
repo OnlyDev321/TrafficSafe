@@ -173,7 +173,10 @@ The TrafficSafe system is expected to:
 
 - Developed by:
 
-OnlyDev
+고현림
+김한결
+응엔다잉두안
+트란트룽하우
 
 TrafficSafe
 
