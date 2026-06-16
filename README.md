@@ -88,7 +88,38 @@ The goal of this project is to enhance pedestrian safety and reduce the risk of 
 
 ## 🔧 System Architecture
 
-Approaching Vehicle ↓ Ultrasonic Sensor ↓ Arduino Uno ↓ Decision Processing ↓ ┌───────────────┐ │ Vehicle Near? │ └───────┬───────┘ │ Yes │ No │ ↓ Lower Barrier (Block Crossing) │ Vehicle Passes │ ↓ Raise Barrier (Allow Crossing)
+```text
+Approaching Vehicle
+        │
+        ▼
+Ultrasonic Sensor (HC-SR04)
+        │
+        ▼
+    Arduino Uno
+        │
+        ▼
+Decision Processing
+        │
+        ▼
+ ┌─────────────────┐
+ │ Vehicle Nearby? │
+ └──────┬──────────┘
+        │
+   ┌────┴────┐
+   │         │
+  Yes        No
+   │         │
+   ▼         ▼
+Lower     Continue
+Barrier   Monitoring
+   │
+   ▼
+Vehicle Passes
+   │
+   ▼
+Raise Barrier
+(Allow Crossing)
+```
 
 ---
 
