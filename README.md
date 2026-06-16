@@ -181,8 +181,6 @@ The TrafficSafe system is expected to:
 
 트란트룽하우
 
-TrafficSafe
-
 ---
 
 ## 📄 License
